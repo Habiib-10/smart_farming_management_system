@@ -12,82 +12,198 @@ class EditCropScreen extends StatefulWidget {
 }
 
 class _EditCropScreenState extends State<EditCropScreen> {
+  final ApiService service = ApiService();
   late TextEditingController _nameController;
   late TextEditingController _statusController;
-  final _apiService = ApiService();
-  bool _isUpdating = false;
+  
+  String? _selectedImage; 
+  int? _currentUserId;
+  bool _isLoading = false;
+
+  final List<String> _availableImages = [
+    'bisbas.jpg', 'cambo.jpg', 'digir_cagaar.jpg', 'digir_gaduud.jpg',
+    'galey.jpg', 'moos.jpg', 'qamadi.jpg', 'rice.jpg', 'sisin.jpg'
+  ];
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.crop.name);
     _statusController = TextEditingController(text: widget.crop.status);
+    _selectedImage = widget.crop.image?.replaceAll("assets/", "").trim();
+    _loadUser(); 
   }
 
-  void _updateCrop() async {
-    if (_nameController.text.isEmpty || _statusController.text.isEmpty) return;
-    
-    setState(() => _isUpdating = true);
-    try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      int? currentUserId = prefs.getInt('user_id');
+  Future<void> _loadUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserId = prefs.getInt('user_id') ?? prefs.getInt('id');
+    });
+  }
 
-      final updatedCrop = Crop(
-        id: widget.crop.id,
-        name: _nameController.text.trim(),
-        status: _statusController.text.trim(),
-        userId: currentUserId ?? widget.crop.userId,
-      );
-
-      bool success = await _apiService.updateCrop(widget.crop.id!, updatedCrop);
-
-      if (success) {
-        Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Waa la cusboonaysiiyey!"), backgroundColor: Colors.green));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ma suuragalin cusboonaysiinta!")));
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Cillad ayaa dhacday!")));
-    } finally {
-      setState(() => _isUpdating = false);
+  // --- UPDATE LOGIC (FIXED) ---
+  void _updateData() async {
+    if (_nameController.text.trim().isEmpty) {
+      _showMessage("Fadlan magaca dalagga geli!", isError: true);
+      return;
     }
+
+    setState(() => _isLoading = true);
+
+    // Halkan waxaan ku daray fieldId si loo xaliyo Error-ka Model-ka
+    final updatedCrop = Crop(
+      id: widget.crop.id,
+      name: _nameController.text.trim(),
+      status: _statusController.text.trim(),
+      image: _selectedImage ?? widget.crop.image,
+      userId: widget.crop.userId ?? _currentUserId ?? 0,
+      fieldId: widget.crop.fieldId, // <--- CUSBOONAYSIIN MUHIIM AH
+    );
+
+    bool success = await service.updateCrop(widget.crop.id!, updatedCrop);
+    
+    setState(() => _isLoading = false);
+
+    if (success) {
+      if (mounted) {
+        _showMessage("Si guul leh ayaa loo beddelay", isError: false);
+        Navigator.pop(context, true); 
+      }
+    } else {
+      _showMessage("Cilad ayaa dhacday markii la kaydinayay!", isError: true);
+    }
+  }
+
+  void _showMessage(String msg, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg), 
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      )
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Colors.green[700]!;
     return Scaffold(
-      appBar: AppBar(title: Text("Edit Crop"), backgroundColor: primaryColor),
-      body: Padding(
-        padding: EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            _buildTextField(_nameController, "Crop Name", Icons.grass),
-            SizedBox(height: 15),
-            _buildTextField(_statusController, "Status", Icons.info_outline),
-            SizedBox(height: 30),
-            _isUpdating ? CircularProgressIndicator() : ElevatedButton(
-              onPressed: _updateCrop,
-              style: ElevatedButton.styleFrom(backgroundColor: primaryColor, minimumSize: Size(double.infinity, 55)),
-              child: Text("Cusboonaysii", style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text("Edit Crop Details", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF15803D),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator(color: Color(0xFF15803D)))
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(25),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    height: 180, width: 180,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+                      border: Border.all(color: Colors.white, width: 4),
+                    ),
+                    child: _selectedImage != null 
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(21),
+                          child: Image.asset("assets/$_selectedImage", fit: BoxFit.cover),
+                        )
+                      : const Icon(Icons.image_search, size: 50, color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                
+                _buildLabel("Crop Name"),
+                TextField(
+                  controller: _nameController, 
+                  decoration: _inputDecoration("Enter crop name", Icons.eco_outlined)
+                ),
+                
+                const SizedBox(height: 20),
+                
+                _buildLabel("Growth Status"),
+                TextField(
+                  controller: _statusController, 
+                  decoration: _inputDecoration("e.g. Ready for harvest", Icons.info_outline)
+                ),
+                
+                const SizedBox(height: 20),
+                
+                _buildLabel("Update Image"),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: Colors.grey.shade300), 
+                    borderRadius: BorderRadius.circular(12)
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedImage,
+                      isExpanded: true,
+                      items: _availableImages.map((img) {
+                        return DropdownMenuItem(
+                          value: img,
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(5),
+                                child: Image.asset("assets/$img", width: 30, height: 30, fit: BoxFit.cover)
+                              ),
+                              const SizedBox(width: 15),
+                              Text(img, style: const TextStyle(fontSize: 14)),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) => setState(() => _selectedImage = val),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 50),
+                
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF15803D),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    ),
+                    onPressed: _updateData, 
+                    child: const Text("Update Crop", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Colors.green),
-        filled: true,
-        fillColor: Colors.grey.shade100,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-      ),
+  Widget _buildLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0, left: 4),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint, IconData icon) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(icon, color: Colors.green),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.green, width: 2)),
     );
   }
 }

@@ -20,4 +20,16 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 
 flutter:
-  uses-material-design: true 
+  uses-material-design: true
+
+  assets:
+    - assets/
+    - assets/bisbas.jpg
+    - assets/cambo.jpg
+    - assets/galey.jpg
+    - assets/moos.jpg
+    - assets/qamadi.jpg
+    - assets/rice.jpg
+    - assets/sisin.jpg
+    - assets/digir_cagaar.jpg
+    - assets/digir_gaduud.jpg

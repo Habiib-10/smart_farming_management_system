@@ -13,217 +13,211 @@ class _LoginScreenState extends State<LoginScreen> {
   final ApiService _apiService = ApiService();
   bool isLoading = false;
   bool _obscurePassword = true;
+  bool _rememberMe = false;
 
   void _handleLogin() async {
-    if (emailController.text.trim().isEmpty ||
-        passwordController.text.trim().isEmpty) {
-      _showError("Fadlan geli Email-ka iyo Password-ka");
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showError("Please enter both email and password");
       return;
     }
 
     setState(() => isLoading = true);
+
     try {
-      final res = await _apiService.login(
-        emailController.text.trim(),
-        passwordController.text.trim(),
-      );
+      final res = await _apiService.login(email, password);
 
-      // HUBINTA LOGIN-KA
-      if (res != null && (res['success'] == true || res.containsKey('token'))) {
+      if (res != null && res['success'] == true) {
         SharedPreferences prefs = await SharedPreferences.getInstance();
-
-        // --- QAYBTA CUSUB: KAYDINTA XOGTA BUUXDA ---
         var user = res['user'];
 
-        // 1. Kaydi User ID (Muhiim u ah Add Crop)
         if (user['id'] != null) {
           await prefs.setInt('user_id', int.parse(user['id'].toString()));
         }
-
-        // 2. Kaydi Magaca
         await prefs.setString('name', user['name'] ?? "User");
-
-        // 3. Kaydi Email-ka
-        await prefs.setString(
-            'email', user['email'] ?? emailController.text.trim());
-
-        // 4. Kaydi Doorka (Role-ka) - Halkan ayaa lagu daray
+        await prefs.setString('email', user['email'] ?? email);
         await prefs.setString('role', user['role'] ?? "Farmer");
+        if (res['token'] != null) {
+          await prefs.setString('token', res['token']);
+        }
 
         if (mounted) {
-          // U gudub Dashboard-ka
           Navigator.pushReplacementNamed(context, '/dashboard');
         }
       } else {
-        _showError(res?['message'] ?? "Email ama Password khaldan!");
+        _showError(res?['message'] ?? "Invalid Email or Password");
       }
     } catch (e) {
-      _showError("Cilad: Xidhiidhka server-ka waa go'an yahay!");
+      _showError("Server Connection Failed! Check if Backend is running.");
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  // --- UI-GA SNACKBAR-KA ---
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          Icon(Icons.error_outline, color: Colors.white),
-          SizedBox(width: 10),
-          Expanded(child: Text(msg)),
-        ]),
-        backgroundColor: Colors.redAccent,
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(15),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      ),
+      SnackBar(content: Text(msg), backgroundColor: Colors.redAccent),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Colors.green.shade700;
-
     return Scaffold(
-      backgroundColor: Color(0xFFF8FAF8),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-            child: Column(
+      backgroundColor: Colors.white,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // --- Top Header with Network Image ---
+            Stack(
               children: [
-                // LOGO SECTION
-                _buildLogo(primaryColor),
-                SizedBox(height: 24),
-                Text("Smart Farming",
-                    style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.green.shade900)),
-                Text("Maamul dalagyadaada si fudud",
-                    style:
-                        TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-                SizedBox(height: 48),
-
-                // INPUT FIELDS
-                _buildTextField(emailController, "Email Address",
-                    Icons.alternate_email_rounded),
-                SizedBox(height: 18),
-                _buildTextField(
-                    passwordController, "Password", Icons.vpn_key_rounded,
-                    isPass: true),
-
-                SizedBox(height: 24),
-
-                // LOGIN BUTTON
-                isLoading
-                    ? CircularProgressIndicator(color: primaryColor)
-                    : _buildLoginButton(primaryColor),
-
-                SizedBox(height: 32),
-
-                // FOOTER
-                _buildFooter(primaryColor),
+                Container(
+                  height: MediaQuery.of(context).size.height * 0.45,
+                  width: double.infinity,
+                  child: Image.network(
+                    'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?q=80&w=1000&auto=format&fit=crop', // High quality leaf image
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                // Wavy White Overlay
+                Positioned(
+                  bottom: -1,
+                  child: Container(
+                    height: 80,
+                    width: MediaQuery.of(context).size.width,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(60),
+                        topRight: Radius.circular(60),
+                      ),
+                    ),
+                  ),
+                ),
+                // Back Button Icon
+                Positioned(
+                  top: 50,
+                  left: 20,
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white.withOpacity(0.3),
+                    child: Icon(Icons.chevron_left, color: Colors.white),
+                  ),
+                ),
               ],
             ),
-          ),
+
+            // --- Login Form Section ---
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Welcome Back", style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Color(0xFF2D3E2D))),
+                          Text("Login to your account", style: TextStyle(color: Colors.grey[600], fontSize: 16)),
+                        ],
+                      ),
+                      Icon(Icons.eco, color: Colors.green.withOpacity(0.4), size: 40),
+                    ],
+                  ),
+                  SizedBox(height: 35),
+
+                  _buildInput("Email address", Icons.person_outline, emailController),
+                  SizedBox(height: 20),
+                  _buildInput("Password", Icons.lock_outline, passwordController, isPass: true),
+
+                  // Remember Me & Forgot Password
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _rememberMe,
+                            activeColor: Colors.green[700],
+                            onChanged: (v) => setState(() => _rememberMe = v!),
+                          ),
+                          Text("Remember Me", style: TextStyle(color: Colors.grey[600])),
+                        ],
+                      ),
+                      TextButton(
+                        onPressed: () {},
+                        child: Text("Forgot Password?", style: TextStyle(color: Colors.grey[700])),
+                      )
+                    ],
+                  ),
+                  SizedBox(height: 15),
+
+                  // Log In Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : _handleLogin,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFF629749), // Matcha Green from your screen
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                        elevation: 0,
+                      ),
+                      child: isLoading 
+                        ? CircularProgressIndicator(color: Colors.white)
+                        : Text("Log In", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
+                  ),
+
+                  SizedBox(height: 25),
+
+                  // Sign Up Footer
+                  Center(
+                    child: Column(
+                      children: [
+                        Text("Don't have an account?", style: TextStyle(color: Colors.grey[600])),
+                        GestureDetector(
+                          onTap: () => Navigator.pushNamed(context, '/register'),
+                          child: Text("Sign Up", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 30),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildLogo(Color color) {
-    return Hero(
-      tag: 'logo',
-      child: Container(
-        padding: EdgeInsets.all(24),
-        decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.green.withOpacity(0.1),
-                  blurRadius: 20,
-                  spreadRadius: 5)
-            ]),
-        child: Icon(Icons.eco_rounded, size: 70, color: color),
-      ),
-    );
-  }
-
-  Widget _buildLoginButton(Color color) {
-    return Container(
-      width: double.infinity,
-      height: 58,
-      decoration: BoxDecoration(boxShadow: [
-        BoxShadow(
-            color: color.withOpacity(0.3), blurRadius: 12, offset: Offset(0, 6))
-      ]),
-      child: ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        ),
-        onPressed: _handleLogin,
-        icon: Icon(Icons.login_rounded),
-        label: Text("LOG IN",
-            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-      TextEditingController ctrl, String label, IconData icon,
-      {bool isPass = false}) {
+  Widget _buildInput(String hint, IconData icon, TextEditingController controller, {bool isPass = false}) {
     return Container(
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: Offset(0, 4))
-          ]),
+        color: Color(0xFFF1F4F1),
+        borderRadius: BorderRadius.circular(15),
+      ),
       child: TextField(
-        controller: ctrl,
+        controller: controller,
         obscureText: isPass ? _obscurePassword : false,
         decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon, color: Colors.green.shade600),
-          suffixIcon: isPass
-              ? IconButton(
-                  icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: Colors.grey),
-                  onPressed: () =>
-                      setState(() => _obscurePassword = !_obscurePassword),
-                )
-              : null,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none),
+          hintText: hint,
+          prefixIcon: Icon(icon, color: Colors.grey[500]),
+          suffixIcon: isPass 
+            ? IconButton(
+                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              ) 
+            : null,
+          border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(vertical: 18),
         ),
       ),
     );
   }
-
-  Widget _buildFooter(Color color) {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text("Ma haysatid Account?"),
-      TextButton(
-        onPressed: () => Navigator.pushNamed(context, '/register'),
-        child: Text("Is-diiwaangeli",
-            style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-      ),
-    ]);
-  }
 }
+    

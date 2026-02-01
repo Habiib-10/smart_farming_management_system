@@ -1,138 +1,224 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/crop_model.dart';
+import '../models/field_model.dart';
 
 class ApiService {
-  // HUBI: Haddii aad Android Emulator isticmaalayso, localhost u baddel 10.0.2.2
-  final String baseUrl = "http://localhost:5000/api";
+  // Use 10.0.2.2 for Android Emulator, or your local IP for physical devices
+  static const String baseUrl = "http://localhost:5000/api";
 
-  // --- HELITAANKA TOKEN-KA ---
-  Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
+  // --- 1. AUTHENTICATION ---
 
-  // --- REGISTER ---
-  Future<Map<String, dynamic>> register(
-      String name, String email, String password, String role) async {
-    try {
-      final res = await http.post(
-        Uri.parse('$baseUrl/auth/register'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "name": name,
-          "email": email,
-          "password": password,
-          "role": role,
-        }),
-      );
-
-      if (res.body.isNotEmpty) return jsonDecode(res.body);
-      return {"success": false, "message": "Server-ku ma soo jawaabin"};
-    } catch (e) {
-      return {"success": false, "message": "Cilad ayaa dhacday: $e"};
-    }
-  }
-
-  // --- LOGIN ---
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
-      final res = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
+      final response = await http.post(
+        Uri.parse("$baseUrl/auth/login"),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"email": email, "password": password}),
+        body: jsonEncode({'email': email, 'password': password}),
       );
-
-      final data = jsonDecode(res.body);
-
-      // Kaydi Token-ka iyo User ID-ga markuu Login guulaysto
-      if (res.statusCode == 200 && data['token'] != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', data['token']);
-        // Hubi in API-gaagu soo celiyo 'id'
-        if (data['user'] != null && data['user']['id'] != null) {
-          await prefs.setInt('user_id', data['user']['id']);
-        }
-      }
-      return data;
+      return jsonDecode(response.body);
     } catch (e) {
-      return {"success": false, "message": "Login-ku ma suurtagalin: $e"};
+      return {'success': false, 'message': "Server unreachable"};
     }
   }
 
-  // --- ADD CROP (SAVE) ---
-  Future<bool> addCrop(Crop crop) async {
+  Future<Map<String, dynamic>> register(String name, String email, String password, String role) async {
     try {
-      final token = await _getToken();
-      final res = await http.post(
-        Uri.parse('$baseUrl/crops'),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token"
-        },
-        body: jsonEncode(crop.toJson()), // Waxay diraysaa user_id, name, status
+      final response = await http.post(
+        Uri.parse("$baseUrl/auth/register"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          'name': name,
+          'email': email,
+          'password': password,
+          'role': role
+        }),
       );
-      return res.statusCode == 201 || res.statusCode == 200;
+      return jsonDecode(response.body);
     } catch (e) {
+      return {'success': false, 'message': "Registration failed"};
+    }
+  }
+
+  Future<bool> changePassword(int userId, String newPassword) async {
+    try {
+      final response = await http.put(
+        Uri.parse("$baseUrl/auth/change-password"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          'user_id': userId,
+          'newPassword': newPassword,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print("Password Update Error: $e");
       return false;
     }
   }
 
-  // --- GET CROPS (LIST) ---
-  Future<List<Crop>> getCrops() async {
+  // --- 2. USER MANAGEMENT (ADMIN & FARMER) ---
+
+  Future<List<dynamic>> getAllUsers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token'); 
+
     try {
-      final token = await _getToken();
-      final res = await http.get(
-        Uri.parse('$baseUrl/crops'),
-        headers: {"Authorization": "Bearer $token"},
+      final response = await http.get(
+        Uri.parse('$baseUrl/users'),
+        headers: {
+          'Authorization': 'Bearer $token', 
+          'Content-Type': 'application/json',
+        },
       );
 
-      if (res.statusCode == 200) {
-        List data = jsonDecode(res.body);
-        return data.map((e) => Crop.fromJson(e)).toList();
+      debugPrint("User API Status: ${response.statusCode}");
+      debugPrint("User API Body: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
+        // If your API returns { "users": [...] } instead of just [...]
+        if (data is Map && data.containsKey('users')) {
+          return data['users'];
+        }
+        
+        return data as List<dynamic>;
+      } else {
+        debugPrint("Server Error: ${response.body}");
+        return [];
       }
     } catch (e) {
-      print("Cilad markii Crops-ka la keenayay: $e");
+      debugPrint("Connection Error: $e");
+      return [];
+    }
+  }
+
+  Future<List<dynamic>> getFarmers() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/users/farmers'));
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+    } catch (e) {
+      print("Error fetching farmers: $e");
     }
     return [];
   }
 
-  // --- UPDATE CROP ---
-  Future<bool> updateCrop(int id, Crop crop) async {
-    try {
-      final token = await _getToken();
-      final res = await http.put(
-        Uri.parse('$baseUrl/crops/$id'),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token"
-        },
-        body: jsonEncode(crop.toJson()),
-      );
-      return res.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // --- DELETE CROP ---
-  Future<bool> deleteCrop(int id) async {
-    try {
-      final token = await _getToken();
-      final res = await http.delete(
-        Uri.parse('$baseUrl/crops/$id'),
-        headers: {"Authorization": "Bearer $token"},
-      );
-      return res.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // --- LOGOUT ---
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Wax walba tirtir (Token & UserID)
+    await prefs.clear();
+  }
+
+  // --- 3. FIELD MANAGEMENT ---
+
+  Future<List<Field>> getFields() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? userId = prefs.getInt('user_id')?.toString(); 
+    final String? role = prefs.getString('role');
+
+    try {
+      final uri = Uri.parse("$baseUrl/fields").replace(queryParameters: {
+        'user_id': userId ?? '',
+        'role': role ?? '',
+      });
+
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        List data = jsonDecode(response.body);
+        return data.map((item) => Field.fromJson(item)).toList();
+      }
+    } catch (e) {
+      print("Fetch Error: $e");
+    }
+    return [];
+  }
+
+  Future<bool> addField(Field field) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/fields"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(field.toJson()),
+      );
+      return response.statusCode == 201 || response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> purchaseField(int fieldId, int userId) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/fields/purchase"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          'field_id': fieldId,
+          'user_id': userId,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print("Purchase Error: $e");
+      return false;
+    }
+  }
+
+  // --- 4. CROP MANAGEMENT ---
+
+  Future<List<Crop>> getCrops() async {
+    try {
+      final response = await http.get(Uri.parse("$baseUrl/crops"));
+      if (response.statusCode == 200) {
+        List data = jsonDecode(response.body);
+        return data.map((item) => Crop.fromJson(item)).toList();
+      }
+    } catch (e) {
+      print("Fetch Error: $e");
+    }
+    return [];
+  }
+
+  Future<bool> addCrop(Crop crop) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/crops"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(crop.toJson()),
+      );
+      return response.statusCode == 201 || response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> updateCrop(int id, Crop crop) async {
+    final response = await http.put(
+      Uri.parse("$baseUrl/crops/$id"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(crop.toJson()),
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> deleteCrop(int id) async {
+    final response = await http.delete(Uri.parse("$baseUrl/crops/$id"));
+    return response.statusCode == 200;
+  }
+
+  // --- 5. WEATHER DATA ---
+
+  Future<Map<String, dynamic>> getWeatherData(String city) async {
+    const apiKey = "609c258d4a46087d4032f5d9333364f2"; 
+    final url = "https://api.openweathermap.org/data/2.5/weather?q=$city&units=metric&appid=$apiKey";
+    try {
+      final response = await http.get(Uri.parse(url));
+      return response.statusCode == 200 ? jsonDecode(response.body) : {};
+    } catch (e) {
+      return {};
+    }
   }
 }
